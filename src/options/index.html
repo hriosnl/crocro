@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Crocro Settings</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            margin: 0;
+            padding: 40px 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .title {
+            font-size: 28px;
+            font-weight: 600;
+            margin: 0 0 8px 0;
+        }
+        .subtitle {
+            color: #999;
+            font-size: 14px;
+            margin: 0;
+        }
+        .section {
+            background: #262626;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid #333;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0 0 16px 0;
+            color: #ffffff;
+        }
+        .field {
+            margin-bottom: 20px;
+        }
+        .field:last-child {
+            margin-bottom: 0;
+        }
+        .label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #ffffff;
+        }
+        .input {
+            width: 100%;
+            padding: 12px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+        .input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 6px;
+            line-height: 1.4;
+        }
+        .btn {
+            padding: 12px 24px;
+            background: #007bff;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: inherit;
+            margin-right: 8px;
+        }
+        .btn:hover {
+            background: #0056b3;
+        }
+        .btn-secondary {
+            background: #666;
+        }
+        .btn-secondary:hover {
+            background: #555;
+        }
+        .actions {
+            text-align: center;
+            padding: 20px 0;
+        }
+        .status-message {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            text-align: center;
+        }
+        .status-success {
+            background: #28a745;
+            color: white;
+        }
+        .status-error {
+            background: #dc3545;
+            color: white;
+        }
+        .hidden {
+            display: none;
+        }
+        .checkbox-field {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .checkbox {
+            width: 16px;
+            height: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">Crocro Settings</h1>
+            <p class="subtitle">Configure your chat extension preferences</p>
+        </div>
+
+        <div id="status-message" class="status-message hidden"></div>
+
+        <div class="section">
+            <h2 class="section-title">Profile</h2>
+            <div class="field">
+                <label class="label" for="display-name">Display Name</label>
+                <input type="text" id="display-name" class="input" placeholder="Your name" maxlength="50">
+                <div class="help-text">This name will be shown to the person you're chatting with.</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">Connection Settings</h2>
+            <div class="field">
+                <label class="label" for="signaling-url">Signaling Server URL</label>
+                <input type="url" id="signaling-url" class="input" placeholder="ws://localhost:8080">
+                <div class="help-text">WebSocket URL for the signaling server. Leave empty to use default.</div>
+            </div>
+            <div class="field">
+                <label class="label" for="stun-servers">STUN Servers</label>
+                <input type="text" id="stun-servers" class="input" placeholder="stun:stun.l.google.com:19302">
+                <div class="help-text">Comma-separated list of STUN servers for NAT traversal.</div>
+            </div>
+            <div class="field">
+                <label class="label" for="turn-servers">TURN Servers (Optional)</label>
+                <input type="text" id="turn-servers" class="input" placeholder="turns:turn.example.com:5349">
+                <div class="help-text">Comma-separated list of TURN servers for firewall traversal.</div>
+            </div>
+            <div class="field">
+                <label class="label" for="turn-username">TURN Username</label>
+                <input type="text" id="turn-username" class="input" placeholder="username">
+                <div class="help-text">Username for TURN server authentication.</div>
+            </div>
+            <div class="field">
+                <label class="label" for="turn-password">TURN Password</label>
+                <input type="password" id="turn-password" class="input" placeholder="password">
+                <div class="help-text">Password for TURN server authentication.</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">Notifications</h2>
+            <div class="field">
+                <div class="checkbox-field">
+                    <input type="checkbox" id="notifications-enabled" class="checkbox">
+                    <label class="label" for="notifications-enabled" style="margin-bottom: 0;">Enable Desktop Notifications</label>
+                </div>
+                <div class="help-text">Show desktop notifications when you receive new messages.</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2 class="section-title">Privacy</h2>
+            <div class="field">
+                <div class="checkbox-field">
+                    <input type="checkbox" id="clear-on-close" class="checkbox">
+                    <label class="label" for="clear-on-close" style="margin-bottom: 0;">Clear Messages on Browser Close</label>
+                </div>
+                <div class="help-text">Automatically delete all chat messages when the browser is closed.</div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button id="save-btn" class="btn">Save Settings</button>
+            <button id="reset-btn" class="btn btn-secondary">Reset to Defaults</button>
+        </div>
+    </div>
+
+    <script type="module" src="./options.js"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Crocro - Realtime private chat",
+  "version": "0.1.0",
+  "description": "Private, minimal chat between two friends.",
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_title": "Crocro"
+  },
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "scripting"
+  ],
+  "optional_permissions": [
+    "notifications",
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://*/",
+    "ws://localhost:8080/*",
+    "wss://localhost:8443/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/index.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["ui/*", "icons/*", "popup/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "options_ui": {
+    "page": "src/options/index.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
