@@ -142,7 +142,7 @@ test.describe('Crocro Extension E2E Tests', () => {
   test.describe('Signaling Server', () => {
     test('signaling server is running and accessible', async ({ page }) => {
       // Test the signaling server health endpoint
-      const response = await page.request.get('http://localhost:8081/health')
+      const response = await page.request.get('http://localhost:8080/health')
       expect(response.status()).toBe(200)
       
       const healthData = await response.json()
@@ -151,7 +151,7 @@ test.describe('Crocro Extension E2E Tests', () => {
 
     test('can create rooms via signaling server', async ({ page }) => {
       // Test room creation via HTTP endpoint
-      const response = await page.request.get('http://localhost:8081/rooms')
+      const response = await page.request.get('http://localhost:8080/rooms')
       expect(response.status()).toBe(200)
       
       const roomsData = await response.json()

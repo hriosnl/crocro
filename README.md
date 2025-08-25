@@ -46,7 +46,7 @@ A private, real-time messaging extension for Chrome and Firefox that enables sec
    ```bash
    cd server && npm run dev
    ```
-   Server will run on `http://localhost:8081`
+   Server will run on `http://localhost:8080`
 
 3. **Build the extension**:
    ```bash
@@ -85,8 +85,8 @@ A private, real-time messaging extension for Chrome and Firefox that enables sec
 ### Server Commands
 
 - `cd server && npm run dev` - Start development server
-- `curl http://localhost:8081/health` - Check server health
-- `curl http://localhost:8081/rooms` - List active rooms
+- `curl http://localhost:8080/health` - Check server health
+- `curl http://localhost:8080/rooms` - List active rooms
 
 ## Testing
 

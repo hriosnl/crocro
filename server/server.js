@@ -343,7 +343,7 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000) // Run every hour
 
-const PORT = process.env.PORT || 8081
+const PORT = process.env.PORT || 8080
 server.listen(PORT, () => {
   console.log(`Crocro signaling server running on port ${PORT}`)
   console.log(`WebSocket endpoint: ws://localhost:${PORT}`)

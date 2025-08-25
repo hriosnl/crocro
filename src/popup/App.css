@@ -6,7 +6,10 @@
   flex-direction: column;
   background: #1a1a1a;
   color: #ffffff;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
 
 /* Header */
@@ -55,7 +58,7 @@
 }
 
 .divider::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 50%;
   left: 0;
@@ -119,7 +122,8 @@
 }
 
 /* Input */
-.input, .message-input {
+.input,
+.message-input {
   width: 100%;
   padding: 12px;
   margin-bottom: 12px;
@@ -132,12 +136,14 @@
   box-sizing: border-box;
 }
 
-.input:focus, .message-input:focus {
+.input:focus,
+.message-input:focus {
   outline: none;
   border-color: #007bff;
 }
 
-.input::placeholder, .message-input::placeholder {
+.input::placeholder,
+.message-input::placeholder {
   color: #999;
 }
 
@@ -186,6 +192,7 @@
   flex: 1;
   overflow: hidden;
   position: relative;
+  padding-top: 20px;
 }
 
 .messages {
@@ -316,12 +323,12 @@
   .setup-content {
     padding: 24px 16px;
   }
-  
+
   .chat-header,
   .message-input-container {
     padding: 12px 16px;
   }
-  
+
   .messages {
     padding: 12px 16px;
   }
