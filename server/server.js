@@ -393,18 +393,31 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000) // Run every hour
 
-const HTTP_PORT = process.env.PORT || 8080
-const HTTPS_PORT = process.env.HTTPS_PORT || 8443
+const PORT = process.env.PORT || 8080
 
-// Start HTTP server
-httpServer.listen(HTTP_PORT, () => {
-  console.log(`Crocro HTTP server running on port ${HTTP_PORT}`)
-  console.log(`WebSocket endpoint: ws://localhost:${HTTP_PORT}`)
-  console.log(`Health check: http://localhost:${HTTP_PORT}/health`)
-})
+// For production (Render/Heroku), use HTTP server only - platform provides HTTPS
+// For development, try HTTPS server first, fallback to HTTP
+if (process.env.NODE_ENV === 'production' || !httpsServer) {
+  httpServer.listen(PORT, () => {
+    console.log(`Crocro server running on port ${PORT}`)
+    console.log(`WebSocket endpoint: ws://localhost:${PORT}`)
+    console.log(`Health check: http://localhost:${PORT}/health`)
+    if (process.env.NODE_ENV === 'production') {
+      console.log('Production mode: Platform provides HTTPS/WSS automatically')
+    }
+  })
+} else {
+  // Development mode with SSL certificates
+  const HTTPS_PORT = process.env.HTTPS_PORT || 8443
+  
+  // Start HTTP server
+  httpServer.listen(PORT, () => {
+    console.log(`Crocro HTTP server running on port ${PORT}`)
+    console.log(`WebSocket endpoint: ws://localhost:${PORT}`)
+    console.log(`Health check: http://localhost:${PORT}/health`)
+  })
 
-// Start HTTPS server if available
-if (httpsServer) {
+  // Start HTTPS server
   httpsServer.listen(HTTPS_PORT, () => {
     console.log(`Crocro HTTPS server running on port ${HTTPS_PORT}`)
     console.log(`Secure WebSocket endpoint: wss://localhost:${HTTPS_PORT}`)
