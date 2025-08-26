@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
 import browser from 'webextension-polyfill'
-import { PopupRTCManager } from './rtc-manager'
 import './App.css'
 
 interface Message {
@@ -35,28 +34,47 @@ const App: React.FC = () => {
   })
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const rtcManagerRef = useRef<PopupRTCManager | null>(null)
 
   useEffect(() => {
-    // Initialize RTC manager
-    console.log('App: Creating PopupRTCManager')
-    rtcManagerRef.current = new PopupRTCManager()
-    console.log('App: PopupRTCManager created:', rtcManagerRef.current)
-    
-    rtcManagerRef.current.onMessage = (message) => {
-      console.log('App: Received message from RTC manager:', message)
-      handleIncomingMessage(message)
-    }
-    
-    rtcManagerRef.current.onConnectionStateChange = (state) => {
-      console.log('App: Connection state changed:', state)
-      updateConnectionStatus(state)
-    }
-    
     // Get initial connection status
     getConnectionStatus()
     
-    // Listen for background messages
+    // Establish port connection for real-time updates
+    const port = browser.runtime.connect({ name: 'popup' })
+    
+    // Set up periodic status checks to ensure UI stays in sync
+    const statusInterval = setInterval(() => {
+      getConnectionStatus()
+    }, 2000) // Check every 2 seconds
+    
+    // Listen for port messages
+    const portMessageListener = (message: any) => {
+      switch (message.type) {
+        case 'MESSAGE_RECEIVED':
+          loadMessages()
+          break
+        case 'MESSAGE_SENT':
+          loadMessages()
+          break
+        case 'CONNECTION_STATE_CHANGED':
+          console.log('Received connection state change via port:', message.payload)
+          updateConnectionStatus(message.payload.state)
+          break
+        case 'RTC_MESSAGE_RECEIVED':
+          handleIncomingMessage(message.payload)
+          break
+        case 'RELAY_MESSAGE_RECEIVED':
+          handleIncomingMessage(message.payload)
+          break
+        case 'PENDING_MESSAGE':
+          handleIncomingMessage(message.payload)
+          break
+      }
+    }
+    
+    port.onMessage.addListener(portMessageListener)
+    
+    // Also listen for background messages (fallback)
     const messageListener = (message: any) => {
       switch (message.type) {
         case 'MESSAGE_RECEIVED':
@@ -66,7 +84,14 @@ const App: React.FC = () => {
           loadMessages()
           break
         case 'CONNECTION_STATE_CHANGED':
-          getConnectionStatus()
+          console.log('Received connection state change:', message.payload)
+          updateConnectionStatus(message.payload.state)
+          break
+        case 'RTC_MESSAGE_RECEIVED':
+          handleIncomingMessage(message.payload)
+          break
+        case 'PENDING_MESSAGE':
+          handleIncomingMessage(message.payload)
           break
       }
     }
@@ -74,10 +99,9 @@ const App: React.FC = () => {
     browser.runtime.onMessage.addListener(messageListener)
     
     return () => {
+      clearInterval(statusInterval)
+      port.disconnect()
       browser.runtime.onMessage.removeListener(messageListener)
-      if (rtcManagerRef.current) {
-        rtcManagerRef.current.disconnect()
-      }
     }
   }, [])
 
@@ -99,11 +123,7 @@ const App: React.FC = () => {
         setCurrentView('chat')
         loadMessages()
         
-        // If we're reconnecting to an existing room, reinitialize WebRTC
         console.log('Reconnecting to existing room:', response.roomId, 'isInitiator:', response.isInitiator)
-        if (rtcManagerRef.current) {
-          await rtcManagerRef.current.initialize(response.roomId, response.isInitiator || false)
-        }
       }
     } catch (error) {
       console.error('Failed to get connection status:', error)
@@ -148,10 +168,7 @@ const App: React.FC = () => {
         setCurrentView('chat')
         await loadMessages()
         
-        // Initialize WebRTC as initiator
-        if (rtcManagerRef.current) {
-          await rtcManagerRef.current.initialize(response.roomId, true)
-        }
+        console.log('Created room:', response.roomId, 'WebRTC handled by background')
       } else {
         alert('Failed to create room: ' + (response.error || 'Unknown error'))
       }
@@ -182,10 +199,7 @@ const App: React.FC = () => {
         setCurrentView('chat')
         await loadMessages()
         
-        // Initialize WebRTC as joiner (not initiator)
-        if (rtcManagerRef.current) {
-          await rtcManagerRef.current.initialize(roomIdToJoin, false)
-        }
+        console.log('Joined room:', roomIdToJoin, 'WebRTC handled by background')
       } else {
         alert('Failed to join room: ' + (response.error || 'Unknown error'))
       }

@@ -1,6 +1,7 @@
 import browser from 'webextension-polyfill'
 import { SignalingClient } from '../lib/signaling'
 import { StorageManager } from '../lib/storage'
+import { RTCManager } from '../lib/rtc'
 
 interface ExtensionMessage {
   type: string
@@ -9,12 +10,13 @@ interface ExtensionMessage {
 
 class BackgroundService {
   private signalingClient: SignalingClient | null = null
+  private rtcManager: RTCManager | null = null
   private storage: StorageManager
   private currentRoomId: string | null = null
   private popupPort: browser.Runtime.Port | null = null
   private isRoomInitiator: boolean = false
-  private pendingSignals: any[] = []
-  private hasPopupConnectedBefore: boolean = false
+  private pendingMessages: any[] = []
+  private isRelayConnected: boolean = false
 
   constructor() {
     this.storage = new StorageManager()
@@ -35,6 +37,13 @@ class BackgroundService {
       this.popupPort = port
       port.onDisconnect.addListener(() => {
         this.popupPort = null
+      })
+      
+      // When popup connects, send current connection status immediately
+      const currentStatus = this.getConnectionStatus()
+      port.postMessage({
+        type: 'CONNECTION_STATE_CHANGED',
+        payload: { state: currentStatus.status }
       })
       
       // When popup reconnects, send queued signals
@@ -79,14 +88,11 @@ class BackgroundService {
         case 'GET_CONNECTION_STATUS':
           return this.getConnectionStatus()
         
-        case 'RTC_SIGNAL':
-          return await this.handleRTCSignal(message.payload)
+        case 'GET_RTC_CONNECTION_STATE':
+          return this.getRTCConnectionState()
         
-        case 'RTC_READY':
-          return await this.notifyRTCReady()
-        
-        case 'RTC_SEND_FAILED':
-          return await this.handleRTCSendFailure(message.payload)
+        case 'GET_PENDING_MESSAGES':
+          return this.getPendingMessages()
         
         case 'SAVE_INCOMING_MESSAGE':
           return await this.saveIncomingMessage(message.payload)
@@ -112,6 +118,7 @@ class BackgroundService {
       this.currentRoomId = roomId
       this.isRoomInitiator = true
       await this.initializeSignaling()
+      await this.initializeRTC()
       
       await this.storage.saveSession({ roomId, createdAt: Date.now(), type: 'creator' })
       
@@ -133,6 +140,7 @@ class BackgroundService {
       this.currentRoomId = roomId
       this.isRoomInitiator = false
       await this.initializeSignaling()
+      await this.initializeRTC()
       
       await this.storage.saveSession({ roomId, createdAt: Date.now(), type: 'joiner' })
       
@@ -146,22 +154,38 @@ class BackgroundService {
   private async initializeSignaling() {
     if (!this.signalingClient || !this.currentRoomId) return
 
-    // Set up signaling message handling - forward to popup or queue if not available
+    // Set up signaling message handling - handle WebRTC directly in background
     this.signalingClient.onSignal = (signal: any) => {
-      console.log('Background forwarding signal to popup:', signal.type, 'popupConnected:', !!this.popupPort)
+      console.log('Background received signaling message:', signal.type)
       
-      if (this.popupPort) {
-        // Forward signal to popup for WebRTC handling
-        console.log('Sending signal to popup:', signal)
-        this.popupPort.postMessage({
-          type: 'SIGNALING_MESSAGE',
-          payload: signal
-        })
-      } else {
-        // Queue signals when popup is not connected
-        console.log('Popup not connected, queuing signal:', signal.type)
-        this.pendingSignals.push(signal)
+      // If it's a peer-joined signal and WebRTC isn't available, mark as connected via relay
+      if (signal.type === 'peer-joined' && typeof RTCPeerConnection === 'undefined') {
+        console.log('Peer joined, WebRTC not available, using relay-only mode')
+        this.isRelayConnected = true
+        this.notifyConnectionStateChange('connected')
       }
+      
+      // For joiners, when they join a room and WebRTC isn't available, check if peer is already present
+      if (signal.type === 'room-joined' && !this.isRoomInitiator && typeof RTCPeerConnection === 'undefined') {
+        console.log('Joined room successfully, WebRTC not available, using relay-only mode')
+        // If the room-joined signal indicates there's already a peer, mark as connected immediately
+        if (signal.hasPeer || signal.peers?.length > 1) {
+          console.log('Room already has peer, marking as connected via relay')
+          this.isRelayConnected = true
+          this.notifyConnectionStateChange('connected')
+        } else {
+          console.log('Room empty, waiting for peer to join')
+          this.notifyConnectionStateChange('connecting')
+        }
+      }
+      
+      // For initiator, when they create a room and WebRTC isn't available, they're ready but waiting for peer
+      if (signal.type === 'room-created' && this.isRoomInitiator && typeof RTCPeerConnection === 'undefined') {
+        console.log('Room created successfully, WebRTC not available, using relay-only mode (waiting for peer)')
+        this.notifyConnectionStateChange('connecting') // Show connecting until peer joins
+      }
+      
+      this.handleRTCSignal(signal)
     }
 
     // Set up relay message handling for when WebRTC is not available
@@ -173,58 +197,202 @@ class BackgroundService {
     console.log('Signaling setup complete, waiting for peer connection...')
   }
 
+  private async initializeRTC() {
+    // Check if WebRTC APIs are available in this context
+    if (typeof RTCPeerConnection === 'undefined') {
+      console.log('WebRTC APIs not available in background service worker, using relay-only mode')
+      this.rtcManager = null
+      return
+    }
+
+    if (this.rtcManager) {
+      console.log('Cleaning up existing RTC manager')
+      this.rtcManager.close()
+      this.rtcManager = null
+    }
+
+    try {
+      // Get RTC configuration
+      const config = this.getRTCConfig()
+      this.rtcManager = new RTCManager(config)
+      
+      // Set up RTC event handlers
+      this.rtcManager.onMessage = (message) => {
+        this.handleIncomingRTCMessage(message)
+      }
+
+      this.rtcManager.onConnectionStateChange = (state) => {
+        console.log('Background RTC connection state changed:', state)
+        this.notifyConnectionStateChange(state)
+        
+        // If connected, try sending any queued messages
+        if (state === 'connected' && this.pendingMessages.length > 0) {
+          this.sendQueuedMessages()
+        }
+      }
+
+      this.rtcManager.onSignal = (signal) => {
+        // Send signal to signaling server
+        if (this.signalingClient) {
+          this.signalingClient.sendSignal(signal)
+        }
+      }
+
+      // If we're the initiator, start WebRTC immediately
+      if (this.isRoomInitiator) {
+        console.log('Initializing WebRTC as initiator (creator)')
+        await this.rtcManager.initialize(true)
+      }
+
+      console.log('Background RTC manager initialized')
+    } catch (error) {
+      console.error('Failed to initialize WebRTC in background, falling back to relay-only:', error)
+      this.rtcManager = null
+    }
+  }
+
   private handlePopupConnection() {
-    // When popup reconnects, send any queued signals
-    if (this.pendingSignals.length > 0) {
-      console.log('Sending', this.pendingSignals.length, 'queued signals to popup')
-      for (const signal of this.pendingSignals) {
-        this.popupPort!.postMessage({
-          type: 'SIGNALING_MESSAGE',
-          payload: signal
+    // When popup reconnects, send pending messages if any
+    if (this.pendingMessages.length > 0 && this.popupPort) {
+      console.log('Sending', this.pendingMessages.length, 'pending messages to popup')
+      for (const message of this.pendingMessages) {
+        this.popupPort.postMessage({
+          type: 'PENDING_MESSAGE',
+          payload: message
         })
       }
-      this.pendingSignals = []
+      this.pendingMessages = []
     }
   }
 
-  private async handleRTCSignal(signal: any): Promise<{ success: boolean }> {
-    // Forward RTC signals from popup to signaling server
-    if (this.signalingClient) {
-      this.signalingClient.sendSignal(signal)
-      return { success: true }
-    }
-    return { success: false }
-  }
-
-  private async notifyRTCReady(): Promise<{ success: boolean }> {
-    // Popup RTC manager is ready, send any queued signals
-    console.log('Popup RTC manager is ready')
-    this.handlePopupConnection()
+  private async handleRTCSignal(signal: any): Promise<void> {
+    console.log('Background handling RTC signal:', signal.type)
     
-    // If this is a reconnection (popup was closed and reopened), notify the other peer
-    // Both creators and joiners should send reconnection signal
-    if (this.signalingClient && this.currentRoomId && this.hasPopupConnectedBefore) {
-      console.log(`Notifying signaling server of ${this.isRoomInitiator ? 'creator' : 'joiner'} reconnection`)
-      this.signalingClient.sendSignal({
-        type: 'peer-reconnected',
-        isInitiator: this.isRoomInitiator
+    // If WebRTC is not available, we rely purely on relay messaging
+    if (typeof RTCPeerConnection === 'undefined' || !this.rtcManager) {
+      console.log('WebRTC not available, skipping signal handling:', signal.type)
+      
+      // For peer-joined signal, mark as connected via relay
+      if (signal.type === 'peer-joined') {
+        this.isRelayConnected = true
+        this.notifyConnectionStateChange('connected')
+      }
+      // For peer-left signal, mark as disconnected
+      else if (signal.type === 'peer-left') {
+        this.isRelayConnected = false
+        this.notifyConnectionStateChange('connecting') // Back to connecting/waiting for peer
+      }
+      return
+    }
+    
+    if (signal.type === 'peer-joined') {
+      console.log('Peer joined, starting WebRTC as initiator:', this.isRoomInitiator)
+      // Start WebRTC connection when peer joins (only for initiator)
+      if (this.isRoomInitiator && this.rtcManager) {
+        setTimeout(() => {
+          if (this.rtcManager) {
+            console.log('Initializing WebRTC as initiator:', this.isRoomInitiator)
+            this.rtcManager.initialize(this.isRoomInitiator)
+          }
+        }, 100)
+      }
+    } else if (signal.type === 'peer-reconnected') {
+      console.log('Peer reconnected, signal data:', signal)
+      const peerWasInitiator = signal.isInitiator || signal.data?.isInitiator
+      
+      // If the peer that reconnected was not the initiator (joiner reconnected), 
+      // and we are the initiator, we should reinitialize to send a fresh offer
+      if (peerWasInitiator === false && this.isRoomInitiator && this.rtcManager) {
+        console.log('Joiner reconnected, re-initializing WebRTC as initiator')
+        setTimeout(() => {
+          if (this.rtcManager) {
+            this.rtcManager.initialize(this.isRoomInitiator)
+          }
+        }, 100)
+      }
+    } else if (signal.type === 'offer') {
+      console.log('Received offer signal, rtcManager exists:', !!this.rtcManager)
+      
+      // Initialize WebRTC for joiner when offer arrives
+      if (!this.rtcManager) {
+        console.log('Creating new RTCManager for joiner')
+        await this.initializeRTC()
+      }
+      
+      if (this.rtcManager) {
+        const currentState = this.rtcManager.getConnectionState()
+        console.log('RTCManager state:', currentState)
+        
+        if (currentState === 'new' || currentState === 'closed' || currentState === 'disconnected') {
+          console.log('Re-initializing RTCManager as joiner')
+          await this.rtcManager.initialize(false)
+        }
+        
+        // Forward offer to RTC manager
+        await this.rtcManager.handleSignal(signal)
+      }
+    } else if (this.rtcManager) {
+      // Forward other WebRTC signals to RTC manager
+      console.log('Forwarding signal to RTC manager:', signal.type)
+      this.rtcManager.handleSignal(signal)
+    }
+  }
+
+  private getRTCConfig() {
+    const stunServers = JSON.parse(import.meta.env.VITE_STUNS || '[\"stun:stun.l.google.com:19302\"]')
+    const turnServers = JSON.parse(import.meta.env.VITE_TURNS || '[]')
+    
+    return {
+      stunServers,
+      turnServers,
+      turnUsername: import.meta.env.VITE_TURN_USERNAME,
+      turnPassword: import.meta.env.VITE_TURN_PASSWORD
+    }
+  }
+
+  private async handleIncomingRTCMessage(message: any) {
+    if (!this.currentRoomId) return
+    
+    const incomingMessage = {
+      ...message,
+      from: 'peer' as const,
+      roomId: this.currentRoomId
+    }
+    
+    await this.storage.saveMessage(incomingMessage)
+    
+    // Forward to popup if connected
+    if (this.popupPort) {
+      this.popupPort.postMessage({
+        type: 'RTC_MESSAGE_RECEIVED',
+        payload: incomingMessage
       })
+    } else {
+      // Queue for when popup connects
+      this.pendingMessages.push(incomingMessage)
     }
     
-    // Mark that popup has connected at least once
-    this.hasPopupConnectedBefore = true
-    
-    return { success: true }
+    this.notifyMessageReceived(incomingMessage)
   }
 
-  private async handleRTCSendFailure(message: any): Promise<{ success: boolean }> {
-    console.log('WebRTC send failed, falling back to signaling server relay')
-    if (this.signalingClient) {
-      // Send via relay - message is already saved in storage
-      this.signalingClient.sendRelayMessage(message)
-      return { success: true }
+  private async sendQueuedMessages() {
+    if (!this.rtcManager || !this.rtcManager.isConnected()) return
+    
+    console.log('Sending queued messages via WebRTC')
+    // Note: Queued outgoing messages are handled by the storage system
+    // This method is for ensuring pending incoming messages are delivered to popup
+  }
+
+  private getRTCConnectionState() {
+    return {
+      connected: this.rtcManager?.isConnected() || false,
+      connectionState: this.rtcManager?.getConnectionState() || 'disconnected',
+      dataChannelState: this.rtcManager?.getDataChannelState() || null
     }
-    return { success: false }
+  }
+
+  private getPendingMessages() {
+    return { messages: this.pendingMessages }
   }
 
   private async saveIncomingMessage(message: any): Promise<{ success: boolean }> {
@@ -265,16 +433,24 @@ class BackgroundService {
       // Save message locally first
       await this.storage.saveMessage(message)
 
-      // Try WebRTC first if popup is connected
-      if (this.popupPort) {
-        this.popupPort.postMessage({
-          type: 'SEND_RTC_MESSAGE',
-          payload: message
-        })
-      } else {
-        // Fallback to signaling server relay when popup is not connected
+      // Try WebRTC first if available and connected
+      let messageSent = false
+      if (this.rtcManager && this.rtcManager.isConnected()) {
+        const success = await this.rtcManager.sendMessage(message)
+        if (success) {
+          messageSent = true
+          console.log('Message sent via WebRTC')
+        } else {
+          console.log('WebRTC send failed, falling back to relay')
+        }
+      }
+      
+      // If WebRTC didn't work or isn't available, use signaling server relay
+      if (!messageSent) {
+        console.log('Sending message via relay (WebRTC not available or failed)')
         if (this.signalingClient) {
           this.signalingClient.sendRelayMessage(message)
+          messageSent = true
         }
       }
       
@@ -319,11 +495,10 @@ class BackgroundService {
   }
 
   private async leaveRoom(): Promise<{ success: boolean }> {
-    // Notify popup to close WebRTC connection
-    if (this.popupPort) {
-      this.popupPort.postMessage({
-        type: 'CLOSE_RTC_CONNECTION'
-      })
+    // Close WebRTC connection managed by background
+    if (this.rtcManager) {
+      this.rtcManager.close()
+      this.rtcManager = null
     }
 
     if (this.signalingClient) {
@@ -333,35 +508,41 @@ class BackgroundService {
 
     this.currentRoomId = null
     this.isRoomInitiator = false
-    this.pendingSignals = []
-    this.hasPopupConnectedBefore = false
+    this.isRelayConnected = false
+    this.pendingMessages = []
     return { success: true }
   }
 
   private async setTyping(isTyping: boolean): Promise<{ success: boolean }> {
-    // Forward typing indicator to popup for WebRTC sending
-    if (this.popupPort) {
-      this.popupPort.postMessage({
-        type: 'SET_TYPING',
-        payload: { isTyping }
-      })
+    // Send typing indicator via WebRTC managed by background
+    if (this.rtcManager && this.rtcManager.isConnected()) {
+      await this.rtcManager.sendTypingIndicator(isTyping)
     }
     return { success: true }
   }
 
   private getConnectionStatus() {
     const signalingConnected = this.signalingClient?.getConnectionState() === 'connected'
+    const webrtcConnected = this.rtcManager?.isConnected() || false
+    const webrtcState = this.rtcManager?.getConnectionState() || 'disconnected'
     
-    // If we have a room and signaling is connected, we're ready for WebRTC
-    // The actual WebRTC state will be managed by the popup when it connects
-    const isReadyForWebRTC = signalingConnected && this.currentRoomId
+    // If WebRTC is not available, use relay connection status
+    const effectivelyConnected = webrtcConnected || (typeof RTCPeerConnection === 'undefined' && this.isRelayConnected)
+    const effectiveState = webrtcConnected ? webrtcState : (this.isRelayConnected ? 'connected' : 'connecting')
+    
+    let status = 'disconnected'
+    if (effectivelyConnected) {
+      status = 'connected'
+    } else if (signalingConnected && this.currentRoomId) {
+      status = 'connecting'
+    }
     
     return {
-      connected: false, // WebRTC connection status will be managed by popup
+      connected: effectivelyConnected,
       roomId: this.currentRoomId,
-      connectionState: isReadyForWebRTC ? 'connecting' : 'disconnected',
+      connectionState: effectiveState,
       signaling: signalingConnected,
-      status: isReadyForWebRTC ? 'connecting' : 'disconnected',
+      status: status,
       isInitiator: this.isRoomInitiator
     }
   }
@@ -374,10 +555,17 @@ class BackgroundService {
     this.broadcastToUI('MESSAGE_RECEIVED', message)
   }
 
-  // Note: Connection state changes now handled by popup
-  // private notifyConnectionStateChange(state: string) {
-  //   this.broadcastToUI('CONNECTION_STATE_CHANGED', { state })
-  // }
+  private notifyConnectionStateChange(state: string) {
+    this.broadcastToUI('CONNECTION_STATE_CHANGED', { state })
+    
+    // Also notify popup if connected
+    if (this.popupPort) {
+      this.popupPort.postMessage({
+        type: 'CONNECTION_STATE_CHANGED',
+        payload: { state }
+      })
+    }
+  }
 
   private async broadcastToUI(type: string, payload: any) {
     try {

@@ -101,6 +101,10 @@ class RoomManager {
     })
   }
   
+  static getRoom(roomId) {
+    return rooms.get(roomId)
+  }
+  
   static getRoomInfo(roomId) {
     const room = rooms.get(roomId)
     if (!room) return null
@@ -222,6 +226,17 @@ function handleJoinRoom(ws, message, peerId) {
       type: 'room-joined',
       roomId
     }))
+    
+    // Also send peer-joined to the joiner if there are other clients in the room
+    const room = RoomManager.getRoom(roomId)
+    if (room && room.clients.size > 1) {
+      console.log(`Sending peer-joined confirmation to joiner ${peerId}`)
+      ws.send(JSON.stringify({
+        type: 'peer-joined',
+        roomId,
+        peerId: 'peer' // Generic peer identifier
+      }))
+    }
   } else {
     ws.send(JSON.stringify({
       type: 'error',
