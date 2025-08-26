@@ -68,7 +68,7 @@ class BackgroundService {
     try {
       switch (message.type) {
         case 'CREATE_ROOM':
-          return await this.createRoom()
+          return await this.createRoom(message.payload?.roomId)
         
         case 'JOIN_ROOM':
           return await this.joinRoom(message.payload.roomId)
@@ -78,6 +78,12 @@ class BackgroundService {
         
         case 'GET_MESSAGES':
           return await this.getMessages()
+        
+        case 'GET_SESSIONS':
+          return await this.getSessions()
+        
+        case 'DELETE_SESSION':
+          return await this.deleteSessionById(message.payload.roomId)
         
         case 'LEAVE_ROOM':
           return await this.leaveRoom()
@@ -107,13 +113,13 @@ class BackgroundService {
     }
   }
 
-  private async createRoom(): Promise<{ roomId: string } | { error: string }> {
+  private async createRoom(manualRoomId?: string): Promise<{ roomId: string } | { error: string }> {
     try {
       const signalingUrl = import.meta.env.VITE_SIGNALING_URL || 'ws://localhost:8080'
       this.signalingClient = new SignalingClient(signalingUrl)
       
       await this.signalingClient.connect()
-      const roomId = await this.signalingClient.createRoom()
+      const roomId = await this.signalingClient.createRoom(manualRoomId)
       
       this.currentRoomId = roomId
       this.isRoomInitiator = true
@@ -393,6 +399,26 @@ class BackgroundService {
 
   private getPendingMessages() {
     return { messages: this.pendingMessages }
+  }
+
+  private async getSessions(): Promise<{ sessions: any[] }> {
+    try {
+      const sessions = await this.storage.getAllSessions()
+      return { sessions }
+    } catch (error) {
+      console.error('Error getting sessions:', error)
+      return { sessions: [] }
+    }
+  }
+
+  private async deleteSessionById(roomId: string): Promise<{ success: boolean }> {
+    try {
+      await this.storage.deleteSession(roomId)
+      return { success: true }
+    } catch (error) {
+      console.error('Error deleting session:', error)
+      return { success: false }
+    }
   }
 
   private async saveIncomingMessage(message: any): Promise<{ success: boolean }> {

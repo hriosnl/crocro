@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Crocro - Realtime private chat",
   "version": "0.1.0",
-  "description": "Private, minimal chat between two persons.",
+  "description": "Private, minimal chat between two people.",
   "action": {
     "default_popup": "src/popup/index.html",
     "default_title": "Crocro"

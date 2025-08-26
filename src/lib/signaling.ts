@@ -103,14 +103,14 @@ export class SignalingClient {
     }
   }
 
-  async createRoom(): Promise<string> {
+  async createRoom(manualRoomId?: string): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!this.isConnected) {
         reject(new Error('Not connected to signaling server'))
         return
       }
 
-      const roomId = this.generateRoomId()
+      const roomId = manualRoomId || this.generateRoomId()
       
       const createRoomHandler = (message: SignalMessage) => {
         if (message.type === 'room-created' && message.roomId === roomId) {
