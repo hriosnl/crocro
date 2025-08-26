@@ -7,7 +7,7 @@ interface SignalMessage {
 
 export class SignalingClient {
   private ws: WebSocket | null = null
-  private url: string
+  private urls: string[]
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
   private reconnectDelay = 1000
@@ -22,59 +22,101 @@ export class SignalingClient {
   onError: ((error: string) => void) | null = null
 
   constructor(url: string) {
-    this.url = url
+    // Create fallback URLs for different browser behaviors
+    if (url.startsWith('ws://')) {
+      // If WS is specified, try WSS on 8443 first (for Firefox), then WS (for Chrome)
+      const baseUrl = url.replace('ws://', '').replace(':8080', '')
+      this.urls = [
+        `wss://${baseUrl}:8443`,
+        `ws://${baseUrl}:8080`
+      ]
+    } else if (url.startsWith('wss://')) {
+      // If WSS is specified, try WSS first, then fall back to WS
+      const baseUrl = url.replace('wss://', '').replace(':8443', '')
+      this.urls = [
+        `wss://${baseUrl}:8443`,
+        `ws://${baseUrl}:8080`
+      ]
+    } else {
+      this.urls = [url]
+    }
   }
 
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      try {
-        this.ws = new WebSocket(this.url)
+      this.tryConnect(0, resolve, reject)
+    })
+  }
+
+  private tryConnect(urlIndex: number, resolve: () => void, reject: (error: Error) => void): void {
+    if (urlIndex >= this.urls.length) {
+      const errorMessage = `Failed to connect to any WebSocket URL: ${this.urls.join(', ')}`
+      this.onError?.(errorMessage)
+      reject(new Error(errorMessage))
+      return
+    }
+
+    const currentUrl = this.urls[urlIndex]
+    console.log(`Trying to connect to: ${currentUrl}`)
+
+    try {
+      this.ws = new WebSocket(currentUrl)
+      
+      this.ws.onopen = () => {
+        console.log(`Signaling client connected to: ${currentUrl}`)
+        this.isConnected = true
+        this.reconnectAttempts = 0
+        this.startKeepAlive()
+        this.onConnected?.()
+        resolve()
+      }
+
+      this.ws.onmessage = (event) => {
+        try {
+          const message: SignalMessage = JSON.parse(event.data)
+          this.handleSignalMessage(message)
+        } catch (error) {
+          console.error('Failed to parse signaling message:', error)
+        }
+      }
+
+      this.ws.onclose = (event) => {
+        console.log('Signaling connection closed:', event.code, event.reason)
+        this.isConnected = false
+        this.onDisconnected?.()
         
-        this.ws.onopen = () => {
-          console.log('Signaling client connected')
-          this.isConnected = true
-          this.reconnectAttempts = 0
-          this.startKeepAlive()
-          this.onConnected?.()
-          resolve()
+        // Only reconnect if it wasn't a clean close and we have attempts left
+        if (!event.wasClean && this.reconnectAttempts < this.maxReconnectAttempts) {
+          console.log('Connection closed unexpectedly, scheduling reconnect...')
+          this.scheduleReconnect()
+        } else if (event.wasClean) {
+          console.log('Connection closed cleanly')
+        } else {
+          console.log('Max reconnect attempts reached')
         }
+      }
 
-        this.ws.onmessage = (event) => {
-          try {
-            const message: SignalMessage = JSON.parse(event.data)
-            this.handleSignalMessage(message)
-          } catch (error) {
-            console.error('Failed to parse signaling message:', error)
-          }
-        }
-
-        this.ws.onclose = (event) => {
-          console.log('Signaling connection closed:', event.code, event.reason)
-          this.isConnected = false
-          this.onDisconnected?.()
-          
-          // Only reconnect if it wasn't a clean close and we have attempts left
-          if (!event.wasClean && this.reconnectAttempts < this.maxReconnectAttempts) {
-            console.log('Connection closed unexpectedly, scheduling reconnect...')
-            this.scheduleReconnect()
-          } else if (event.wasClean) {
-            console.log('Connection closed cleanly')
-          } else {
-            console.log('Max reconnect attempts reached')
-          }
-        }
-
-        this.ws.onerror = (event) => {
-          console.error('Signaling connection error:', event)
-          const errorMessage = 'WebSocket connection failed'
+      this.ws.onerror = (event) => {
+        console.error(`WebSocket connection error for ${currentUrl}:`, event)
+        
+        // Try the next URL if available
+        if (urlIndex + 1 < this.urls.length) {
+          console.log(`Trying next URL fallback...`)
+          this.tryConnect(urlIndex + 1, resolve, reject)
+        } else {
+          const errorMessage = `WebSocket connection failed to all URLs: ${this.urls.join(', ')}`
           this.onError?.(errorMessage)
           reject(new Error(errorMessage))
         }
-
-      } catch (error) {
-        reject(error)
       }
-    })
+
+    } catch (error) {
+      if (urlIndex + 1 < this.urls.length) {
+        this.tryConnect(urlIndex + 1, resolve, reject)
+      } else {
+        reject(error instanceof Error ? error : new Error('Unknown error'))
+      }
+    }
   }
 
   disconnect(): void {

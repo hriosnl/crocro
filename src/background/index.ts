@@ -292,8 +292,16 @@ class BackgroundService {
     }
     
     if (signal.type === 'peer-joined') {
-      console.log('Peer joined, starting WebRTC as initiator:', this.isRoomInitiator)
-      // Start WebRTC connection when peer joins (only for initiator)
+      console.log('Peer joined, immediately activating relay mode and attempting WebRTC')
+      
+      // Immediately activate relay mode when 2nd participant joins
+      if (!this.isRelayConnected) {
+        console.log('Second participant connected, activating relay mode')
+        this.isRelayConnected = true
+        this.notifyConnectionStateChange('connected')
+      }
+      
+      // Still try WebRTC in parallel (it can upgrade the connection if successful)
       if (this.isRoomInitiator && this.rtcManager) {
         setTimeout(() => {
           if (this.rtcManager) {
@@ -477,6 +485,13 @@ class BackgroundService {
         if (this.signalingClient) {
           this.signalingClient.sendRelayMessage(message)
           messageSent = true
+          
+          // If we successfully send via relay and we're not already marked as relay connected, mark as connected
+          if (!this.isRelayConnected) {
+            console.log('Successfully sent relay message, marking relay connection as active')
+            this.isRelayConnected = true
+            this.notifyConnectionStateChange('connected')
+          }
         }
       }
       
@@ -499,6 +514,13 @@ class BackgroundService {
     }
     
     await this.storage.saveMessage(incomingMessage)
+    
+    // If we receive a relay message and we're not already marked as relay connected, mark as connected
+    if (!this.isRelayConnected) {
+      console.log('Received relay message, marking relay connection as active')
+      this.isRelayConnected = true
+      this.notifyConnectionStateChange('connected')
+    }
     
     // Forward to popup if connected
     if (this.popupPort) {
@@ -552,8 +574,8 @@ class BackgroundService {
     const webrtcConnected = this.rtcManager?.isConnected() || false
     const webrtcState = this.rtcManager?.getConnectionState() || 'disconnected'
     
-    // If WebRTC is not available, use relay connection status
-    const effectivelyConnected = webrtcConnected || (typeof RTCPeerConnection === 'undefined' && this.isRelayConnected)
+    // Use relay connection status as fallback regardless of WebRTC availability
+    const effectivelyConnected = webrtcConnected || this.isRelayConnected
     const effectiveState = webrtcConnected ? webrtcState : (this.isRelayConnected ? 'connected' : 'connecting')
     
     let status = 'disconnected'

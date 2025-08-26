@@ -2,9 +2,27 @@ import WebSocket, { WebSocketServer } from 'ws'
 import express from 'express'
 import cors from 'cors'
 import { createServer } from 'http'
+import { createServer as createHttpsServer } from 'https'
+import { readFileSync } from 'fs'
 
 const app = express()
-const server = createServer(app)
+const httpServer = createServer(app)
+
+// Create HTTPS server with SSL certificates
+let httpsServer = null
+let wsss = null
+
+try {
+  const sslOptions = {
+    key: readFileSync('./key.pem'),
+    cert: readFileSync('./cert.pem')
+  }
+  httpsServer = createHttpsServer(sslOptions, app)
+  console.log('HTTPS server created with SSL certificates')
+} catch (error) {
+  console.warn('Could not create HTTPS server (SSL certificates not found):', error.message)
+  console.warn('Running in HTTP-only mode')
+}
 
 app.use(cors())
 app.use(express.json())
@@ -13,10 +31,19 @@ app.use(express.json())
 const rooms = new Map() // roomId -> { clients: Set<WebSocket>, createdAt: Date }
 const clients = new Map() // WebSocket -> { roomId: string, peerId: string }
 
+// WebSocket server for HTTP
 const wss = new WebSocketServer({ 
-  server,
+  server: httpServer,
   path: '/'
 })
+
+// WebSocket server for HTTPS (WSS)
+if (httpsServer) {
+  wsss = new WebSocketServer({ 
+    server: httpsServer,
+    path: '/'
+  })
+}
 
 // Room management
 class RoomManager {
@@ -117,10 +144,10 @@ class RoomManager {
   }
 }
 
-// WebSocket connection handling
-wss.on('connection', (ws, req) => {
+// WebSocket connection handling function
+function handleWebSocketConnection(ws, req, protocol = 'ws') {
   const peerId = generatePeerId()
-  console.log(`New WebSocket connection: ${peerId}`)
+  console.log(`New ${protocol.toUpperCase()} connection: ${peerId}`)
   
   ws.on('message', (data) => {
     try {
@@ -136,12 +163,12 @@ wss.on('connection', (ws, req) => {
   })
   
   ws.on('close', () => {
-    console.log(`WebSocket connection closed: ${peerId}`)
+    console.log(`${protocol.toUpperCase()} connection closed: ${peerId}`)
     RoomManager.leaveRoom(ws)
   })
   
   ws.on('error', (error) => {
-    console.error(`WebSocket error for ${peerId}:`, error)
+    console.error(`${protocol.toUpperCase()} error for ${peerId}:`, error)
     RoomManager.leaveRoom(ws)
   })
   
@@ -150,7 +177,15 @@ wss.on('connection', (ws, req) => {
     type: 'connected',
     peerId
   }))
-})
+}
+
+// Set up WebSocket connection handlers
+wss.on('connection', (ws, req) => handleWebSocketConnection(ws, req, 'ws'))
+
+// Set up WSS connection handlers if HTTPS server is available
+if (wsss) {
+  wsss.on('connection', (ws, req) => handleWebSocketConnection(ws, req, 'wss'))
+}
 
 function handleMessage(ws, message, peerId) {
   console.log(`Message from ${peerId}:`, message.type)
@@ -358,9 +393,21 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000) // Run every hour
 
-const PORT = process.env.PORT || 8080
-server.listen(PORT, () => {
-  console.log(`Crocro signaling server running on port ${PORT}`)
-  console.log(`WebSocket endpoint: ws://localhost:${PORT}`)
-  console.log(`Health check: http://localhost:${PORT}/health`)
+const HTTP_PORT = process.env.PORT || 8080
+const HTTPS_PORT = process.env.HTTPS_PORT || 8443
+
+// Start HTTP server
+httpServer.listen(HTTP_PORT, () => {
+  console.log(`Crocro HTTP server running on port ${HTTP_PORT}`)
+  console.log(`WebSocket endpoint: ws://localhost:${HTTP_PORT}`)
+  console.log(`Health check: http://localhost:${HTTP_PORT}/health`)
 })
+
+// Start HTTPS server if available
+if (httpsServer) {
+  httpsServer.listen(HTTPS_PORT, () => {
+    console.log(`Crocro HTTPS server running on port ${HTTPS_PORT}`)
+    console.log(`Secure WebSocket endpoint: wss://localhost:${HTTPS_PORT}`)
+    console.log(`Secure health check: https://localhost:${HTTPS_PORT}/health`)
+  })
+}

@@ -1,175 +1,293 @@
 # Crocro - Cross-Browser Chat Extension
 
-A private, real-time messaging extension for Chrome and Firefox that enables secure peer-to-peer communication between two people using WebRTC.
+A private, real-time messaging extension for Chrome and Firefox that enables secure communication between two people using relay messaging with WebRTC fallback.
 
 ## Features
 
 - **Cross-browser compatibility**: Works on both Chrome and Firefox
-- **Real-time messaging**: WebRTC DataChannel for direct peer-to-peer communication
-- **Private by default**: No message content stored on servers
-- **WebSocket signaling**: Efficient connection establishment
+- **Real-time messaging**: WebSocket relay with WebRTC fallback for optimal performance
+- **Private by default**: Messages relay through your own server
+- **Instant connection**: No complex WebRTC negotiation delays
 - **Local storage**: IndexedDB for message history and session persistence
 - **Responsive UI**: Clean, modern interface built with React
 - **Room-based**: Simple 6-character room codes for easy connection
+- **Smart fallbacks**: Automatic protocol switching (WSS/WS) for different browsers
 
 ## Architecture
 
 ```
 /crocro
   /src
-    /background     # Service worker for signaling and WebRTC
+    /background     # Service worker for signaling and messaging
     /content        # Content script for UI injection
     /popup          # React popup interface
     /options        # Settings page
-    /lib            # Core libraries (WebRTC, signaling, storage)
+    /lib            # Core libraries (signaling, WebRTC, storage)
     /assets         # Icons and static resources
-  /server           # WebSocket signaling server
+  /server           # WebSocket signaling and relay server
   /tests            # Playwright E2E tests
 ```
 
-## Development Setup
+## Quick Start (Local Development)
 
 ### Prerequisites
 
 - Node.js 18+ and npm
 - Chrome or Firefox for testing
 
-### Installation
+### 1. Setup and Start Server
 
-1. **Clone and install dependencies**:
+```bash
+# Install dependencies
+npm install
+cd server && npm install
+
+# Start the signaling server
+npm run dev
+```
+Server runs on `http://localhost:8080` and `https://localhost:8443`
+
+### 2. Build and Load Extension
+
+```bash
+# Build extension
+npm run build
+
+# For Firefox: Accept certificate first
+# Go to https://localhost:8443/health and accept the security warning
+```
+
+**Load in Chrome:**
+1. Open `chrome://extensions/`
+2. Enable "Developer mode" 
+3. Click "Load unpacked" → Select `dist/` directory
+
+**Load in Firefox:**
+1. Open `about:debugging#/runtime/this-firefox`
+2. Click "Load Temporary Add-on" → Select any file in `dist/`
+
+### 3. Test Locally
+1. Click extension icon → "Create Room" 
+2. Open second browser → "Join Room" with the code
+3. Start chatting instantly!
+
+---
+
+## 🚀 Production Deployment (For Remote Friends)
+
+To use this with friends over the internet, you need to deploy the server online.
+
+### Option 1: Render (Recommended - Easy & Free)
+
+1. **Create Render Account**: Sign up at [render.com](https://render.com)
+
+2. **Push to GitHub**: 
    ```bash
-   npm install
-   cd server && npm install
+   # Make sure your server code is on GitHub
+   git add .
+   git commit -m "Add server for deployment"
+   git push origin main
    ```
 
-2. **Start the signaling server**:
-   ```bash
-   cd server && npm run dev
-   ```
-   Server will run on `http://localhost:8080`
+3. **Deploy on Render**:
+   - Go to [render.com/dashboard](https://render.com/dashboard)
+   - Click "New +" → "Web Service"
+   - Connect your GitHub repository
+   - Select the `server` folder as root directory
+   - Choose "Node" environment
+   - Click "Create Web Service"
 
-3. **Build the extension**:
+4. **Get Your Server URL**: Render will give you a URL like `https://your-app.onrender.com`
+
+5. **Update Environment**:
+   ```bash
+   # In your .env file
+   VITE_SIGNALING_URL=wss://your-app.onrender.com
+   ```
+
+6. **Rebuild Extension**:
    ```bash
    npm run build
    ```
-   Built extension will be in the `dist/` directory
 
-### Loading the Extension
+7. **Share with Friends**: Send them the built extension files and loading instructions
 
-#### Chrome
-1. Open `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select the `dist/` directory
+### Option 2: Fly.io (Good Free Alternative)
 
-#### Firefox
-1. Open `about:debugging#/runtime/this-firefox`
-2. Click "Load Temporary Add-on"
-3. Select any file in the `dist/` directory
+1. **Install Fly CLI**:
+   ```bash
+   # Install Fly CLI
+   curl -L https://fly.io/install.sh | sh
+   
+   # Login to Fly
+   fly auth login
+   ```
 
-## Usage
+2. **Deploy Server**:
+   ```bash
+   cd server
+   fly launch --no-deploy
+   # Follow prompts, then:
+   fly deploy
+   ```
 
-1. **Create a room**: Click the extension icon and press "Create New Room"
-2. **Share the room code**: Copy the 6-character room code to share with a friend
-3. **Join a room**: Enter a room code and click "Join Room"
-4. **Start chatting**: Once connected, messages are sent directly peer-to-peer
+3. **Update Environment**:
+   ```bash
+   # In your .env file  
+   VITE_SIGNALING_URL=wss://your-app.fly.dev
+   ```
+
+### Option 3: Railway (Paid - $5/month)
+
+1. **Note**: Railway no longer has a free tier, requires $5/month minimum
+
+2. **Deploy if Budget Allows**:
+   ```bash
+   # Install Railway CLI
+   npm install -g @railway/cli
+   
+   # Login and deploy
+   railway login
+   cd server && railway deploy
+   ```
+
+### Option 4: Your Own VPS/Server
+
+1. **Server Requirements**:
+   - Node.js 18+
+   - PM2 for process management
+   - SSL certificate (Let's Encrypt recommended)
+   - Port 443 open for WSS
+
+2. **Deploy Server**:
+   ```bash
+   # On your server
+   git clone <your-repo>
+   cd crocro/server
+   npm install --production
+   
+   # Generate SSL certificate (Let's Encrypt)
+   certbot --nginx -d yourdomain.com
+   
+   # Update server.js to use your SSL certificates
+   # Start with PM2
+   pm2 start server.js --name crocro-server
+   pm2 save
+   pm2 startup
+   ```
+
+3. **Update Environment**:
+   ```bash
+   # In your .env file
+   VITE_SIGNALING_URL=wss://yourdomain.com
+   ```
+
+### Option 5: Cloudflare Tunnels (Advanced)
+
+1. **Install Cloudflare Tunnel**:
+   ```bash
+   # Install cloudflared
+   # Run your local server
+   cd server && npm run dev
+   
+   # In another terminal, create tunnel
+   cloudflared tunnel --url http://localhost:8080
+   ```
+
+2. **Use the tunnel URL** in your `.env` file
+
+---
+
+## 📦 Distributing to Friends
+
+### Method 1: Send Built Files
+1. Build extension: `npm run build`
+2. Zip the `dist/` folder
+3. Send to friends with loading instructions above
+
+### Method 2: GitHub Releases
+1. Tag your version: `git tag v1.0.0`
+2. Push to GitHub: `git push origin v1.0.0`
+3. Create a Release on GitHub with the built files
+4. Friends can download from Releases page
+
+### Method 3: Browser Stores (Future)
+- Package extensions: `npm run package`  
+- Submit `artifacts/crocro-chrome.zip` to Chrome Web Store
+- Submit `artifacts/crocro-firefox.zip` to Firefox Add-ons
+
+---
+
+## 🔧 Configuration
+
+Environment variables (`.env`):
+```bash
+VITE_SIGNALING_URL=wss://your-server.com
+VITE_STUNS=["stun:stun.l.google.com:19302"]
+VITE_TURNS=[]
+VITE_TURN_USERNAME=""  
+VITE_TURN_PASSWORD=""
+```
 
 ## Development Commands
 
-- `npm run dev:chrome` - Development build with watch mode
 - `npm run build` - Production build
-- `npm run typecheck` - TypeScript type checking
-- `npm run test:e2e` - Run Playwright E2E tests
-- `npm run lint` - Run ESLint
+- `npm run typecheck` - TypeScript checking
+- `npm run test:e2e` - E2E tests
+- `npm run lint` - ESLint
 
-### Server Commands
+### Server Commands  
+- `cd server && npm run dev` - Development server
+- `curl https://your-server.com/health` - Health check
+- `curl https://your-server.com/rooms` - List rooms
 
-- `cd server && npm run dev` - Start development server
-- `curl http://localhost:8080/health` - Check server health
-- `curl http://localhost:8080/rooms` - List active rooms
+## How It Works
 
-## Testing
+1. **Connection**: Smart fallback tries WSS first (Firefox), then WS (Chrome)
+2. **Relay Mode**: Messages go through your server instantly (default)
+3. **WebRTC Fallback**: Attempts peer-to-peer upgrade in background
+4. **Automatic**: No user configuration needed
 
-The project includes comprehensive E2E tests using Playwright:
-
-```bash
-npm run test:e2e
+**Message Flow**:
+```
+Browser A → Your Server → Browser B  (Relay Mode)
+Browser A ↔ Browser B                 (WebRTC Mode - when available)
 ```
 
-Tests cover:
-- Extension loading and initialization
-- Signaling server functionality
-- Room creation and joining
-- Message sending and receiving
-- WebRTC connection establishment
-- Error handling and recovery
+## Security & Privacy
 
-## Configuration
+- **Your server, your control**: Messages relay through your deployed server
+- **Temporary storage**: Server doesn't persist messages
+- **Optional encryption**: Add end-to-end encryption for sensitive conversations
+- **Minimal permissions**: Only requires storage and network access
 
-Environment variables (in `.env`):
-- `VITE_SIGNALING_URL` - WebSocket signaling server URL
-- `VITE_STUNS` - JSON array of STUN servers
-- `VITE_TURNS` - JSON array of TURN servers (optional)
-- `VITE_TURN_USERNAME` - TURN server username
-- `VITE_TURN_PASSWORD` - TURN server password
+## Troubleshooting
+
+**"Connecting..." stuck**: Refresh extension, check server is running
+**Connection failed**: Verify server URL in `.env` and rebuild extension  
+**Certificate errors**: Accept self-signed certificates in development
+**Cross-browser issues**: Use relay mode (current setup) for reliability
 
 ## Technical Details
 
-### WebRTC Flow
-1. User creates/joins room via signaling server
-2. WebRTC PeerConnection established with ICE candidate exchange
-3. DataChannel opened for message transport
-4. Messages sent directly peer-to-peer (no server relay)
-
-### Security
-- End-to-end encrypted via WebRTC DTLS
-- No message content stored on signaling server
-- Minimal browser permissions required
-- Optional TURN servers for firewall traversal
-
-### Browser Compatibility
-- **Chrome**: Manifest V3 service worker
-- **Firefox**: Compatible with WebExtensions API
-- **Cross-browser**: Uses `webextension-polyfill` for API normalization
-
-## Project Structure
-
-- **Background Script** (`src/background/`): Handles signaling, WebRTC setup, and storage
-- **Content Script** (`src/content/`): Injects chat UI into web pages
-- **Popup** (`src/popup/`): Extension popup interface (React)
-- **Options** (`src/options/`): Settings page for configuration
-- **Signaling Server** (`server/`): Minimal Node.js WebSocket server
-- **Storage** (`src/lib/storage.ts`): IndexedDB wrapper for persistence
-- **WebRTC** (`src/lib/rtc.ts`): Peer connection and data channel management
-
-## Deployment
-
-For production deployment:
-
-1. **Build for both browsers**:
-   ```bash
-   npm run build
-   ```
-
-2. **Package extensions**:
-   ```bash
-   npm run package
-   ```
-   Creates `artifacts/crocro-chrome.zip` and `artifacts/crocro-firefox.zip`
-
-3. **Deploy signaling server** to your preferred hosting platform
-
-4. **Update environment variables** with production server URLs
+- **Relay Mode**: WebSocket connections to your server (current implementation)
+- **WebRTC**: Direct peer-to-peer (fallback when available)
+- **Storage**: IndexedDB for local message history
+- **Manifest V3**: Compatible service worker architecture
 
 ## License
 
 MIT License - see LICENSE file for details.
 
-## Contributing
+---
 
-1. Fork the repository
-2. Create a feature branch
-3. Run tests: `npm run typecheck && npm run test:e2e`
-4. Submit a pull request
+## Quick Deploy Checklist ✅
 
-For questions or issues, please open a GitHub issue.
+1. [ ] Deploy server to Render/Fly.io/Railway
+2. [ ] Update `VITE_SIGNALING_URL` in `.env` 
+3. [ ] Run `npm run build`
+4. [ ] Test extension locally with deployed server
+5. [ ] Share `dist/` folder + instructions with friends
+6. [ ] Have friends load extension and test connection
+
+**Ready to chat with friends worldwide! 🌍**
