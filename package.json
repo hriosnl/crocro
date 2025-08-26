@@ -4,9 +4,11 @@
   "description": "Private, minimal chat between two friends via WebRTC",
   "type": "module",
   "scripts": {
-    "dev:chrome": "vite build --mode development --watch",
-    "dev:firefox": "vite build --mode development --watch",
+    "dev:chrome": "node scripts/build-manifest.js chrome && vite build --mode development --watch",
+    "dev:firefox": "node scripts/build-manifest.js firefox && vite build --mode development --watch",
     "build": "tsc && vite build",
+    "build:chrome": "node scripts/build-manifest.js chrome && npm run build",
+    "build:firefox": "node scripts/build-manifest.js firefox && npm run build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "typecheck": "tsc --noEmit",
@@ -14,9 +16,9 @@
     "format": "prettier --write .",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "package": "npm run build && npm run package:chrome && npm run package:firefox",
-    "package:chrome": "cd dist && zip -r ../artifacts/crocro-chrome.zip .",
-    "package:firefox": "cd dist && zip -r ../artifacts/crocro-firefox.zip ."
+    "package": "npm run package:chrome && npm run package:firefox",
+    "package:chrome": "npm run build:chrome && cd dist && zip -r ../artifacts/crocro-chrome.zip .",
+    "package:firefox": "npm run build:firefox && cd dist && zip -r ../artifacts/crocro-firefox.zip ."
   },
   "dependencies": {
     "react": "^18.2.0",
