@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev:chrome": "node scripts/build-manifest.js chrome && vite build --mode development --watch",
-    "dev:firefox": "node scripts/build-manifest.js firefox && vite build --mode development --watch",
+    "dev:firefox": "node scripts/build-manifest.js firefox && vite build --mode development && web-ext run --source-dir=./dist --keep-profile-changes",
+    "dev:firefox:profile": "node scripts/build-manifest.js firefox && vite build --mode development && web-ext run --source-dir=./dist --keep-profile-changes --firefox-profile",
     "build": "tsc && vite build",
     "build:chrome": "node scripts/build-manifest.js chrome && npm run build",
     "build:firefox": "node scripts/build-manifest.js firefox && npm run build",
@@ -18,7 +19,8 @@
     "test:e2e": "playwright test",
     "package": "npm run package:chrome && npm run package:firefox",
     "package:chrome": "npm run build:chrome && cd dist && zip -r ../artifacts/crocro-chrome.zip .",
-    "package:firefox": "npm run build:firefox && cd dist && zip -r ../artifacts/crocro-firefox.zip ."
+    "package:firefox": "npm run build:firefox && cd dist && zip -r ../artifacts/crocro-firefox.zip .",
+    "sign:firefox": "npm run build:firefox && web-ext sign --source-dir=./dist --api-key=$AMO_JWT_ISSUER --api-secret=$AMO_JWT_SECRET --channel=unlisted"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -40,6 +42,7 @@
     "typescript": "^5.2.2",
     "vite": "^5.0.0",
     "vite-plugin-web-extension": "^4.1.1",
-    "vitest": "^1.0.0"
+    "vitest": "^1.0.0",
+    "web-ext": "^8.9.0"
   }
 }

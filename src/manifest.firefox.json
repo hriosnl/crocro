@@ -2,5 +2,10 @@
   "background": {
     "scripts": ["src/background/index.ts"],
     "type": "module"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "crocro@hiro.dev"
+    }
   }
 }
