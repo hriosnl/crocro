@@ -44,6 +44,7 @@ const App: React.FC = () => {
     connectionState: "disconnected",
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -382,6 +383,15 @@ const App: React.FC = () => {
     });
   };
 
+  const copyMessageText = (text: string, messageId: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedMessageId(messageId);
+      setTimeout(() => {
+        setCopiedMessageId(null);
+      }, 1500);
+    });
+  };
+
   const handleKeyPress = (event: React.KeyboardEvent) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -571,7 +581,16 @@ const App: React.FC = () => {
               key={message.id}
               className={`message ${message.from === "self" ? "message-self" : "message-peer"}`}
             >
-              <div className="message-content">{message.text}</div>
+              <div className="message-bubble">
+                <div className="message-content">{message.text}</div>
+                <button
+                  className={`copy-button ${copiedMessageId === message.id ? 'copied' : ''}`}
+                  onClick={() => copyMessageText(message.text, message.id)}
+                  title="Copy message"
+                >
+                  {copiedMessageId === message.id ? '✓' : '📋'}
+                </button>
+              </div>
               <div className="message-meta">
                 {formatTime(message.timestamp)}
                 {message.from === "self" && (
