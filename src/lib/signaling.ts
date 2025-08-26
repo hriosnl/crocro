@@ -22,22 +22,27 @@ export class SignalingClient {
   onError: ((error: string) => void) | null = null
 
   constructor(url: string) {
-    // Create fallback URLs for different browser behaviors
-    if (url.startsWith('ws://')) {
-      // If WS is specified, try WSS on 8443 first (for Firefox), then WS (for Chrome)
-      const baseUrl = url.replace('ws://', '').replace(':8080', '')
-      this.urls = [
-        `wss://${baseUrl}:8443`,
-        `ws://${baseUrl}:8080`
-      ]
-    } else if (url.startsWith('wss://')) {
-      // If WSS is specified, try WSS first, then fall back to WS
-      const baseUrl = url.replace('wss://', '').replace(':8443', '')
-      this.urls = [
-        `wss://${baseUrl}:8443`,
-        `ws://${baseUrl}:8080`
-      ]
+    // For production deployments (no localhost), use the URL as-is
+    // For localhost development, create fallback URLs
+    if (url.includes('localhost')) {
+      // Development mode - create fallback URLs with different ports
+      if (url.startsWith('ws://')) {
+        const baseUrl = url.replace('ws://', '').replace(':8080', '')
+        this.urls = [
+          `wss://${baseUrl}:8443`,
+          `ws://${baseUrl}:8080`
+        ]
+      } else if (url.startsWith('wss://')) {
+        const baseUrl = url.replace('wss://', '').replace(':8443', '')
+        this.urls = [
+          `wss://${baseUrl}:8443`,
+          `ws://${baseUrl}:8080`
+        ]
+      } else {
+        this.urls = [url]
+      }
     } else {
+      // Production mode - use the exact URL provided (hosting platform handles HTTPS/WSS)
       this.urls = [url]
     }
   }
